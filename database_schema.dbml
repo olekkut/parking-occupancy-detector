@@ -1,0 +1,40 @@
+// Projekt Bazy Danych - System Detekcji Zajętości Miejsc Parkingowych
+
+Table cameras {
+  id uuid [primary key]
+  name varchar(100) [not null]
+  rtsp_url varchar(255)
+  is_active boolean [not null]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+}
+
+Table parking_spaces {
+  id uuid [primary key]
+  camera_id uuid [not null]
+  space_code varchar(50) [unique, not null]
+  status space_status [not null]
+  geometry geometry [not null, note: 'PostGIS POLYGON, SRID 4326']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+}
+
+Table occupancy_history {
+  id uuid [primary key]
+  parking_space_id uuid [not null]
+  status space_status [not null]
+  iou_value double [not null] // Zmienione z float na double dla 100% zgodności z double precision
+  timestamp timestamp [not null]
+}
+
+Enum space_status {
+  UNKNOWN
+  DISABLED
+  RESERVED
+  OCCUPIED
+  FREE
+}
+
+// Relacje między tabelami
+Ref: parking_spaces.camera_id > cameras.id [delete: cascade]
+Ref: occupancy_history.parking_space_id > parking_spaces.id [delete: cascade]
