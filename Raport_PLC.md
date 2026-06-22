@@ -1,8 +1,8 @@
 # Raport Techniczny: Inteligentny System Automatyzacji Parkingu z Integracją PLC i YOLO
 
 **Przedmiot**: Programowanie sterowników PLC - Mini-Projekt (Zadanie 3)  
-**Autor**: Alex K.  
-**Temat Integracyjny**: Projekt i realizacja systemu monitorowania dostępności miejsc parkingowych z wykorzystaniem analizy obrazu YOLO oraz automatyki sterowania opartej na sterowniku PLC.
+**Autor**: Aleksander Kutycki 
+**Temat projektu**: Projekt i realizacja systemu monitorowania dostępności miejsc parkingowych z wykorzystaniem analizy obrazu YOLO oraz automatyki sterowania opartej na sterowniku PLC.
 
 ---
 
@@ -12,8 +12,16 @@ Tradycyjne systemy parkingowe opierają się na pętlach indukcyjnych lub czujni
 
 Niniejszy projekt prezentuje nowoczesne, hybrydowe podejście:
 1. **Warstwa Detekcji**: Cyfrowa analiza obrazu z kamer z wykorzystaniem sieci neuronowej **YOLOv8/v11** w celu bezkontaktowego określania zajętości miejsc parkingowych.
+
+![Zrzut z zestatu danych treningowego PKLot, przedstawiający fragment kompleksu parkingowego z widocznymi ramkami otaczającymi pojazdy](image.png)
+
 2. **Warstwa Automatyki (PLC)**: Przetwarzanie stanów logicznych czujników wjazdowych/wyjazdowych (pętli indukcyjnych), sterowanie fizycznymi barierami (szlabanami) oraz dynamicznymi tablicami informacyjnymi i sygnalizatorami LED nad miejscami parkingowymi.
+
+![Schemat logiczny szlabanu wjazdowego: Szlaban podnosi się, gdy w trybie AUTO czujnik pętli wykryje pojazd i jest więcej niż 0 wolnych miejsc, lub gdy operator wymusi podniesienie w trybie MANUAL](image-1.png)
+
 3. **Warstwa HMI (Human-Machine Interface)**: Webowy panel operatorski wykonany w technologii Responsive Web Design z komunikacją w czasie rzeczywistym przez WebSockets.
+
+![Główny panel webowy Synoptyka HMI](image-2.png)
 
 ---
 
@@ -21,22 +29,7 @@ Niniejszy projekt prezentuje nowoczesne, hybrydowe podejście:
 
 System charakteryzuje się rozproszoną, trójwarstwową strukturą:
 
-```
-[ Kamera IP ] -> (Detekcja YOLO + Homografia) 
-                       |
-                       v
-            [ Moduł Anonimizacji RODO ] (u źródła)
-                       | (Wartości IoU)
-                       v
-             [ FastAPI Backend Server ] <---> [ Baza Danych PostGIS ]
-                       |
-        +--------------+--------------+
-        | (WebSockets)                | (Rejestry Modbus/Emulacja)
-        v                             v
-  [ Panel HMI ]                [ Sterownik PLC ]
-                                 - Szlabany (Wjazd/Wyjazd)
-                                 - Sygnalizatory LED
-```
+![alt text](image-9.png)
 
 ### 2.1 Algorytm IoU (Intersection over Union)
 Zamiast uproszczonej detekcji punktowej, system wykorzystuje przestrzenną analizę geodezyjną w bazie danych z rozszerzeniem **PostGIS** lub bibliotece **Shapely**:
@@ -56,7 +49,7 @@ Projekt w pełni realizuje zasadę *Privacy by Design* (RODO):
 
 ---
 
-## 4. Projekt Bazy Danych (Trzecia Postać Normalna - 3NF)
+## 4. Projekt Bazy Danych
 
 Struktura bazy danych została znormalizowana do poziomu **3NF**, co zapobiega anomalii modyfikacji i minimalizuje redundancję:
 * **Tabela `cameras`**: Przechowuje informacje o sprzęcie.
@@ -68,6 +61,8 @@ Struktura bazy danych została znormalizowana do poziomu **3NF**, co zapobiega a
 ## 5. Algorytmika i Logika Sterownika PLC
 
 Sterownik PLC zarządza logiką dostępu w trybie automatycznym (AUTO) oraz umożliwia przejęcie pełnej kontroli manualnej (RĘCZNY) przez operatora HMI.
+
+![Podstawowa logika sterowania szlabanem wjazdowym w trybie AUTO z dwoma czujnikami pętli indukcyjnej i zabezpieczeniem przed najechaniem na podniesiony szlaban](image-3.png)
 
 ### 5.1 Wykaz rejestrów (Memory Map — notacja IEC 61131-3)
 | Adres IEC | Nazwa symboliczna | Typ | Opis |
@@ -91,6 +86,9 @@ Sterownik PLC zarządza logiką dostępu w trybie automatycznym (AUTO) oraz umo�
 | `%MW46` | `barrier_cycles` | Reg | Łączna liczba wykonanych cykli szlabanów. |
 | `%MW48` | `motor_health` | Reg | Wskaźnik sprawności/zużycia silnika szlabanu [%]. |
 
+![Wykaz rejestrów PLC z interfejsu](image-4.png)
+
+
 ### 5.2 Logika drabinowa (LD) — opis działania
 1. **Sterowanie napędem szlabanu wjazdowego (`%Q0.0`)**:
    * W trybie **AUTO** (`%M0.0 = 1`): Szlaban podnosi się (`%Q0.0 = 1`), gdy czujnik pętli indukcyjnej wykryje pojazd (`%I0.0 = 1`) **ORAZ** rejestr miejsc dostępnych jest większy od zera (`%MW22 > 0`).
@@ -109,6 +107,8 @@ System implementuje trzypoziomowy dziennik alarmów zgodnie z normą ISA-18.2:
 * **INFO** — zdarzenia informacyjne (wjazd/wyjazd, nawiązanie połączenia, wymuszenie stanu rejestrów z klatki PKLot).
 * **WARNING** — ostrzeżenia operacyjne (przejście w tryb MANUAL, ręczne podniesienie szlabanu).
 * **ALARM** — stany krytyczne wymagające interwencji (parking pełny, utrata połączenia WebSocket).
+
+![Dziennik alarmów i zdarzeń z interfejsu HMI](image-5.png)
 
 Wszystkie zdarzenia rejestrowane są w tabeli dziennika na panelu HMI z oznaczeniem czasu, priorytetu, źródła (adres IEC rejestru) i komunikatu. Dziennik przechowuje ostatnie 50 zdarzeń sesji.
 
@@ -135,6 +135,8 @@ W celu pełnego odzwierciedlenia pracy parkingu w cyklu dobowym, zintegrowano mo
 * **Automatyczne sprzężenie z PLC**: Wybór dowolnego punktu na osi czasu automatycznie wysyła stan detekcji do backendu, który aktualizuje rejestry sterownika.
 * **Dynamiczne animacje HMI**: Zmiany stanów między kolejnymi klatkami są przesyłane do klienta przez WebSockets, co automatycznie wyzwala płynne animacje wjazdu/wyjazdu samochodów na makiecie synoptycznej (HMI).
 
+![Synoptyka obiektu z interfejsu HMI](image-7.png)
+
 ---
 
 ## 7. Podsumowanie i Wnioski
@@ -145,7 +147,7 @@ Integracja zaawansowanej wizji komputerowej ze sprawdzonymi systemami automatyki
 
 ## 8. Monitorowanie Maszyn i Analiza Telemetryczna (Wymóg Min. 100 Rekordów)
 
-Zgodnie z wymaganiami **Zadania 3 (Free Mini Project)**, system posiada moduł gromadzenia danych telemetrycznych oraz predykcyjnego utrzymania ruchu (Predictive Maintenance). Dane pomiarowe z szafy sterowniczej parkingu (`Szafa_Sterownicza_A`) oraz barier są zapisywane w relacyjnej bazie danych SQLite (`telemetry_log.db`).
+Zgodnie z wymaganiami zadania, system posiada moduł gromadzenia danych telemetrycznych oraz predykcyjnego utrzymania ruchu (Predictive Maintenance). Dane pomiarowe z szafy sterowniczej parkingu (`Szafa_Sterownicza_A`) oraz barier są zapisywane w relacyjnej bazie danych SQLite (`telemetry_log.db`).
 
 ### 8.1 Schemat Tabeli Telemetrycznej (`plc_telemetry`)
 * `id` (INTEGER, PK): Unikalny identyfikator wpisu.
@@ -159,6 +161,8 @@ Zgodnie z wymaganiami **Zadania 3 (Free Mini Project)**, system posiada moduł g
 * `fan_health` (REAL): Sprawność wentylatora chłodzącego [%].
 * `cabinet_fan` (INTEGER): Stan pracy wentylatora (1 = WŁ, 0 = WYŁ).
 * `maintenance_lockout` (INTEGER): Blokada bezpieczeństwa PLC (1 = Aktywna, 0 = Brak).
+
+![Konsola telemetryczna z interfejsu HMI](image-6.png)
 
 ### 8.2 Tabela Analizy Telemetrycznej (Anomalie / Przekroczenia Zakresów)
 Poniższa tabela zawiera 20 reprezentatywnych rekordów anomalii wyekstrahowanych z bazy danych zawierającej **120 rekordów** (zrzut z analizy wykonanej skryptem `generate_telemetry_report.py`):
@@ -191,21 +195,18 @@ Poniższa tabela zawiera 20 reprezentatywnych rekordów anomalii wyekstrahowanyc
 2. **Analiza temperatury (Brak chłodzenia)**: W rekordach 202–209 zasymulowano uszkodzenie sterowania wentylatora. Temperatura wzrosła do 30.6°C (powyżej progu krytycznego 27.0°C). System HMI wygenerował alarm dźwiękowy, a sterownik PLC przeszedł w tryb awaryjny (Fail-Safe), wymuszając ciągłą pracę wentylatora chłodzącego (`%Q0.2 = 1`).
 3. **Analiza zużycia (Predykcja tarcia)**: W rekordach 221–240 poziom smaru w napędzie spadł poniżej 5.0% (`grease_level = 4.5%`). Wywołało to blokadę "ENGINE CHECK" (`%M2.0 = 1`), która zablokowała szlaban wjazdowy (`%Q0.0 = 0`), uniemożliwiając wjazd nowych aut do czasu interwencji technika (uzupełnienia smaru z poziomu HMI), chroniąc silnik szlabanu przed zatarciem.
 
+![Panel analityczny inspirowany wykresami Grafana z interfejsu HMI](image-8.png)
+
 ---
 
 ## 9. Zgodność z Tematyką Wykładów i Wytycznymi Akademickimi
 
-Projekt został zaprojektowany i wykonany z bezpośrednim odniesieniem do zagadnień omawianych na wykładach z przedmiotu **Programowanie sterowników PLC** prowadzonych przez **mgr inż. Adama Jarosiewicza**:
+Projekt został zaprojektowany i wykonany z bezpośrednim odniesieniem do zagadnień omawianych na zajęciach z przedmiotu:
 
-### Wykład 1: Wprowadzenie do PLC, Systemy Wizyjne i Lokalne Modele SLM
 * **Factory I/O i Symulacje wizualne**: Zamiast klasycznego testowania na sucho, w projekcie wdrożono dwukierunkową symulację HMI/PLC połączoną z renderingiem wektorowym (SVG) na klatkach z kamer. Symuluje to nowoczesne messroomy kontrolne oraz integrację ze środowiskami 3D (typu Factory I/O).
 * **Systemy wizyjne do Kontroli Jakości**: Zastosowanie detektora YOLOv8/v11 z progiem IoU do detekcji pojazdów jest bezpośrednim uogólnieniem przemysłowych systemów wizyjnych służących np. do wykrywania wad odlewniczych w blokach silników czy precyzyjnych pomiarów geometrycznych.
-* **Lokalne Modele Językowe (Bielik, PLLuM)**: Projekt w dokumentacji HMI oraz w kodzie forecastera wspiera ideę lokalnych małych modeli językowych (SLM) takich jak Bielik (ok. 20GB bazujący na Mistralu) w celu automatyzacji asystenta operatora. Asystent ten (Digital Twin) analizuje bazę alarmów przez mechanizm RAG (Retrieval-Augmented Generation), oferując personelowi natychmiastowe procedury serwisowe (np. jak uzupełnić smar w szlabanie) bez wysyłania danych telemetrycznych do chmur publicznych.
-* **Human-on-the-Loop (HOTL)**: HMI realizuje podejście HOTL – automatyka PLC działa niezależnie w trybie AUTO (`%M0.0 = 1`), lecz operator w każdej chwili może przełączyć system w tryb RĘCZNY (MANUAL) i forsować rejestry, a system AI jedynie wspiera go predykcją i wnioskami.
-* **Vibe-Coding (Andrew Karpathy)**: Wykorzystanie nowoczesnych asystentów AI przyspieszyło proces tworzenia interfejsu panelu HMI SENTINEL (HTML/CSS), jednak algorytmy fizycznego sterowania i interlocków bezpieczeństwa (np. fail-safe UPS i termostaty) zostały zaprojektowane sztywno w kodzie backendu, eliminując problem halucynacji AI w krytycznych aspektach bezpieczeństwa linii.
-
-### Wykład 2: Roboty Mobilne, Kaizen 5S, Ryzyka Chmurowe i Języki PLC
-* **Roboty Mobilne (AGV/AMR)**: Porównano analizę wizyjną YOLO parkingu z systemami nawigacji robotów mobilnych (takich jak Hubert czy Carlo w zakładach Mercedes/Audi) bazującymi na śledzeniu linii (OpenCV) i czujnikach laserowych LIDAR.
+* **Human-on-the-Loop (HOTL)**: HMI realizuje podejście HOTL – automatyka PLC działa niezależnie w trybie AUTO (`%M0.0 = 1`), lecz operator w każdej chwili może przełączyć system w tryb RĘCZNY (MANUAL) i forsować rejestry, a system automatyczny jest jedynie uzupełniany przez system ML predykcjami i wnioskami.
+* **Vibe-Coding**: Wykorzystanie nowoczesnych asystentów AI przyspieszyło proces tworzenia interfejsu panelu HMI SENTINEL (HTML/CSS), jednak algorytmy fizycznego sterowania i interlocków bezpieczeństwa (np. fail-safe UPS i termostaty) zostały zaprojektowane sztywno w kodzie backendu, eliminując problem halucynacji AI w krytycznych aspektach bezpieczeństwa linii.
 * **Zasady Kaizen 5S**:
   - *Seiri (Selekcja)*: Podział zmiennych PLC na wejścia, wyjścia, markery i rejestry słowowe.
   - *Seiton (Systematyka)*: Modularna struktura HMI (zakładki Synoptyka, Topologia, Analityka, ML) oraz uporządkowane trasy kablowe.
@@ -215,14 +216,14 @@ Projekt został zaprojektowany i wykonany z bezpośrednim odniesieniem do zagadn
 * **Ryzyka Chmurowe**: Lokalne algorytmy predykcji ML (Holt-Winters oraz Regresja Wielozmienna w czystym Pythonie) zabezpieczają zakład przed nagłymi zmianami cenników chmurowych (nawet o 1000%) czy blokadami geolokalizacyjnymi API.
 * **IEC 61131-3 (LD / ST)**: W plikach konfiguracyjnych symulatora oraz w HMI zaimplementowano reprezentację logiki sterownika zarówno w postaci kodu tekstowego (Structured Text), jak i wizualizacji układu drabinkowego (Ladder Diagram).
 
-### Wykład 3: Simultus, Architektura Multi-Project, RAG i Workflow
-* **Simultus i Codesys**: Wirtualny sterownik PLC bazuje na koncepcji bezpłatnych simulatorów edukacyjnych (jak polski Simultus czy Codesys), emulując kompletną przestrzeń adresową Modbus/TCP bez konieczności fizycznego podłączania drogiego sterownika Siemens S7 czy WAGO.
-* **Zasada "One Task a Day"**: Rozwój oprogramowania był prowadzony ściśle według tej metodologii, gdzie każdy etap (np. integracja bazy, animacja pasów ruchu, kalendarz Hikvision, predykcje) był osobno kończony, testowany i zamykany sukcesem przed przejściem do kolejnego kroku.
+![Graficzna wizualizacja modułu "TOPOLOGIA SIECI" który reprezentuje działania komponentow systemu inspirowany systemami SCADA oraz interfejsem Cisco Packet Tracer](image-11.png)
 
-### Wykład 4: Anatomia Robota Kuka, Utrzymanie Ruchu i Cyfrowy Bliźniak
+* **Simultus i Codesys**: Wirtualny sterownik PLC bazuje na koncepcji bezpłatnych simulatorów edukacyjnych (jak polski Simultus czy Codesys), emulując kompletną przestrzeń adresową Modbus/TCP bez konieczności fizycznego podłączania drogiego sterownika Siemens S7 czy WAGO.
+* **Zasada "One Task a Day"**: Rozwój oprogramowania był prowadzony ściśle według tej metodologii, gdzie każdy etap (np. integracja bazy, animacja pasów ruchu, kalendarz zainspirowany monitoringiem Hikvision, predykcje) był osobno kończony, testowany i zamykany sukcesem przed przejściem do kolejnego kroku.
 * **Robot Kuka i Reguła Ruchów**: Szlaban wjazdowy i wyjazdowy potraktowano jako uproszczone jednoosiowe manipulatory (odpowiedniki osi A1/A4 robota Kuka). Ich kąty obrotu i ruchy są kontrolowane przez rejestry PLC. Wymuszenie ujemnego kierunku ruchu powoduje awaryjne podniesienie ramienia z kolizji, co odpowiada regule Kuka (ruch na minus podnosi ramię z kolizji ze stołem).
 * **Pakiety Mediów (Media Packages) vs Trytytki**: Szafa sterownicza PLC oraz okablowanie napędu szlabanów zostały zaprojektowane z użyciem fabrycznych prowadnic kablowych (peszle z zasilaniem i pneumatyką chłodzącą), odrzucając tanie spinanie kabli opaskami zaciskowymi (trytytkami), co chroni kable przed przecieraniem się w trakcie tysięcy cykli pracy.
 * **Walka o milisekundy**: Czas reakcji pętli indukcyjnych i podnoszenia szlabanu został zoptymalizowany pod kątem czasu taktu. Każde skrócenie cyklu o kilkaset milisekund zmniejsza korkowanie się wjazdu i optymalizuje przepustowość całego parkingu.
-* **Digital Twin (Cyfrowy Bliźniak)**: Wykres "Na Dziś" na panelu Synoptyka, pokazujący faktyczne obłożenie parkingu nałożone na symulowaną prognozę z przedziałem ufności 95% i wariancją modelu ML, stanowi realizację koncepcji Cyfrowego Bliźniaka do analizy wąskich gardeł obiektu.
+* **Digital Twin (Cyfrowy Bliźniak)**: Wykres "Na Dziś" na panelu Synoptyka, pokazujący faktyczne obłożenie parkingu nałożone na symulowaną prognozę z przedziałem ufności 95% i wariancją modelu ML, stanowi realizację koncepcji Cyfrowego Bliźniaka do analizy wąskich gardeł obiektu. Warto zaznaczyć że ten wykres wymaga dopracowania, pozostawiony obecnie w fazie koncepcyjnej, w związku z ograniczonymi zasobami przerobowymi.
 
 
+![Graficzna wizualizacja modułu prognóz i estymacji obłożenia parkingu](image-12.png)
