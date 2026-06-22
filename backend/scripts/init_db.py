@@ -55,60 +55,37 @@ async def run_demo():
             
             print(f"Dodano kamerę: ID={camera.id}, Nazwa={camera.name}")
             
-            print("\n5. Dodawanie testowych miejsc parkingowych (jako poligony PostGIS)...")
+            print("\n5. Dodawanie testowych miejsc parkingowych (jako poligony PostGIS) - 28 miejsc dla PKLot...")
             
-            # Tworzymy wielokąty (Polygony) reprezentujące miejsca parkingowe
-            # Współrzędne geograficzne w okolicach Warszawy (SRID 4326)
-            poly_a1 = Polygon([
-                (21.0122, 52.2297),
-                (21.0124, 52.2297),
-                (21.0124, 52.2299),
-                (21.0122, 52.2299),
-                (21.0122, 52.2297) # Zamknięcie wielokąta
-            ])
-            
-            poly_a2 = Polygon([
-                (21.0125, 52.2297),
-                (21.0127, 52.2297),
-                (21.0127, 52.2299),
-                (21.0125, 52.2299),
-                (21.0125, 52.2297)
-            ])
-            
-            poly_a3 = Polygon([
-                (21.0128, 52.2297),
-                (21.0130, 52.2297),
-                (21.0130, 52.2299),
-                (21.0128, 52.2299),
-                (21.0128, 52.2297)
-            ])
-            
-            space1 = ParkingSpace(
-                camera_id=camera.id,
-                space_code="A-1",
-                status=SpaceStatus.FREE,
-                geometry=from_shape(poly_a1, srid=4326)
-            )
-            space2 = ParkingSpace(
-                camera_id=camera.id,
-                space_code="A-2",
-                status=SpaceStatus.FREE,
-                geometry=from_shape(poly_a2, srid=4326)
-            )
-            space3 = ParkingSpace(
-                camera_id=camera.id,
-                space_code="A-3",
-                status=SpaceStatus.DISABLED,
-                geometry=from_shape(poly_a3, srid=4326)
-            )
-            
-            session.add_all([space1, space2, space3])
+            spaces_to_add = []
+            for i in range(1, 29):
+                offset = (i - 1) * 0.0001
+                poly = Polygon([
+                    (21.0122 + offset, 52.2297),
+                    (21.0124 + offset, 52.2297),
+                    (21.0124 + offset, 52.2299),
+                    (21.0122 + offset, 52.2299),
+                    (21.0122 + offset, 52.2297)
+                ])
+                status = SpaceStatus.FREE
+                if i in (27, 28):
+                    status = SpaceStatus.DISABLED
+                
+                space = ParkingSpace(
+                    camera_id=camera.id,
+                    space_code=f"A-{i}",
+                    status=status,
+                    geometry=from_shape(poly, srid=4326)
+                )
+                spaces_to_add.append(space)
+                
+            session.add_all(spaces_to_add)
             await session.flush()
-            print("Dodano 3 miejsca parkingowe (A-1, A-2, A-3 - miejsce dla niepełnosprawnych).")
+            print("Dodano 28 miejsc parkingowych (A-1 do A-28, miejsca A-27 i A-28 dla niepełnosprawnych).")
             
             # Dodanie historii dla miejsca A-1
             history1 = OccupancyHistory(
-                parking_space_id=space1.id,
+                parking_space_id=spaces_to_add[0].id,
                 status=SpaceStatus.FREE,
                 iou_value=0.0,
                 timestamp=datetime.utcnow()

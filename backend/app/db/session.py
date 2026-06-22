@@ -1,5 +1,4 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from typing import AsyncGenerator
 from backend.app.config import settings
 
 # Tworzenie asynchronicznego silnika bazy danych
@@ -18,10 +17,3 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False
 )
 
-# Asynchroniczny generator sesji (używany jako dependency w FastAPI)
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()

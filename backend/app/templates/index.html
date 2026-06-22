@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTINEL — Taktyczny Panel HMI Automatyzacji Parkingu</title>
+    <meta name="description" content="System SCADA/HMI do zarządzania parkingiem z integracją sterownika PLC, detekcją YOLO i bazą PostGIS">
+    <!-- Google Fonts: Share Tech for tabular elements and Outfit for text -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech&family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/script.js" defer></script>
+</head>
+<body>
+    <div class="tactical-app">
+        <!-- MAIN AREA -->
+        <div class="main-content">
+            <!-- TOP STATS BAR -->
+            <div class="top-bar">
+                <div class="top-logo">
+                    <span class="top-sec-badge">SYSTEM: <span id="top-system-status">PRACA NORMALNA</span></span>
+                    <span class="top-location">STREFA A — BRAMA PLC</span>
+                </div>
+                <div class="top-progress-container">
+                    <div class="progress-label">OBŁOŻENIE:</div>
+                    <div class="progress-bar-bg">
+                        <div id="top-occupancy-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                    <div id="top-occupancy-percent" class="progress-percent">0%</div>
+                </div>
+                <div class="top-kpis">
+                    <div class="top-kpi">
+                        <span class="kpi-unit">DOST:</span>
+                        <span id="top-available-kpi" class="kpi-num">--</span>
+                        <span class="kpi-slash">/</span>
+                        <span class="kpi-total">28</span>
+                    </div>
+                </div>
+                <div id="datetime-display" class="top-rtc">--:--:--</div>
+                <div class="top-theme-selector" style="margin-left: 1rem; display: flex; align-items: center;">
+                    <select id="theme-selector" style="background-color: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 2px; padding: 0.2rem 0.4rem; font-family: 'Share Tech', monospace; font-size: 0.75rem; font-weight: 700; outline: none; cursor: pointer;">
+                        <option value="default">CIEMNY TACTICAL (DOMYŚLNY)</option>
+                        <option value="tactical-red">NIGHT VISION (CZERWONY)</option>
+                        <option value="light-high-glare">JASNY (WYSOKI KONTRAST)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- TAB NAVIGATION -->
+            <div class="tab-navigation-bar">
+                <button id="tab-btn-hmi" class="tab-btn active" onclick="switchTab('hmi-screen')">📊 SYNOPTYKA HMI</button>
+                <button id="tab-btn-topology" class="tab-btn" onclick="switchTab('topology-screen')">🔌 TOPOLOGIA SIECI (PACKET TRACER)</button>
+                <button id="tab-btn-logs" class="tab-btn" onclick="switchTab('logs-screen')">📟 LOGI SYSTEMOWE</button>
+                <button id="tab-btn-analytics" class="tab-btn" onclick="switchTab('analytics-screen')">📈 ANALITYKA / WYKRESY (GRAFANA)</button>
+                <button id="tab-btn-ml" class="tab-btn" onclick="switchTab('ml-screen')">🤖 PROGNOZY I ESTYMACJE ML</button>
+            </div>
+
+            <!-- ENGINE CHECK — LOCKOUT BANNER (hidden by default) -->
+            <div id="maintenance-lockout-banner" class="lockout-banner" style="display: none;">
+                <span class="lockout-icon">⚠️</span>
+                <span class="lockout-text">ENGINE CHECK — BLOKADA AWARYJNA: Krytyczne zużycie komponentów. Wymagany serwis.</span>
+                <span class="lockout-icon">⚠️</span>
+            </div>
+
+            <!-- TAB CONTENT 1: OPERATIONAL HMI -->
+            <div id="hmi-screen" class="tab-content active">
+                <!-- HMI GRID -->
+                <main class="hmi-grid">
+                <!-- COLUMN 1: Mapa rejestrów PLC -->
+                <section class="hmi-card plc-status-card" id="plc-registers-section">
+                    <h2>Mapa rejestrów sterownika PLC</h2>
+                    <div class="metric-row">
+                        <div class="metric-box">
+                            <span class="metric-label">Miejsca dostępne (%MW22)</span>
+                            <span id="available-counter" class="metric-value">--</span>
+                            <span class="metric-sub">z 28 stanowisk</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">Tryb pracy sterownika (%M0.0)</span>
+                            <span id="plc-mode-val" class="metric-value-text text-yellow">--</span>
+                            <button id="toggle-mode-btn" class="hmi-btn btn-secondary">AUTO / MAN</button>
+                        </div>
+                    </div>
+
+                    <div class="status-table">
+                        <div class="table-row">
+                            <span>%I0.0 — Czujnik pętli indukcyjnej (wjazd)</span>
+                            <span id="sensor-wjazd" class="badge badge-inactive interactive-badge" data-target="loops">BRAK DETEKCJI</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%I0.1 — Czujnik pętli indukcyjnej (wyjazd)</span>
+                            <span id="sensor-wyjazd" class="badge badge-inactive interactive-badge" data-target="loops">BRAK DETEKCJI</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%Q0.0 — Napęd szlabanu wjazdowego</span>
+                            <span id="barrier-wjazd-status" class="badge badge-inactive interactive-badge" data-target="wjazd_motor">OPUSZCZONY ▼</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%Q0.1 — Napęd szlabanu wyjazdowego</span>
+                            <span id="barrier-wyjazd-status" class="badge badge-inactive interactive-badge" data-target="wyjazd_motor">OPUSZCZONY ▼</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%Q0.2 — Wentylator chłodzący szafę</span>
+                            <span id="fan-status" class="badge badge-inactive interactive-badge" data-target="fan-status">WYŁĄCZONY</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%MW46 — Licznik cykli szlabanów</span>
+                            <span id="barrier-cycles" class="badge badge-inactive interactive-badge" data-target="chart-cycles-val">0</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%MW48 — Zużycie silnika szlabanu</span>
+                            <span id="motor-health" class="badge badge-inactive interactive-badge" data-target="chart-motor-val">100.0%</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%MW50 — Poziom smaru szlabanu</span>
+                            <span id="grease-level" class="badge badge-inactive interactive-badge" data-target="chart-grease-val">100.0%</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%MW52 — Stan wentylatora szafy</span>
+                            <span id="fan-health-register" class="badge badge-inactive interactive-badge" data-target="chart-fan-val">100.0%</span>
+                        </div>
+                        <div class="table-row">
+                            <span>%MW54 — Czas pracy wentylatora</span>
+                            <span id="fan-runtime-register" class="badge badge-inactive interactive-badge" data-target="chart-fan-run-val">0s</span>
+                        </div>
+                    </div>
+
+                    <!-- Session Statistics -->
+                    <div class="stats-section">
+                        <h3>Statystyki sesji operacyjnej</h3>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Wjazdy</span>
+                                <span id="stat-entries" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Wyjazdy</span>
+                                <span id="stat-exits" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Szczyt. obłoż.</span>
+                                <span id="stat-peak" class="stat-value">0%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Uptime</span>
+                                <span id="stat-uptime" class="stat-value">00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <!-- COLUMN 2: Synoptyka obiektu -->
+                <section class="hmi-card visualization-card">
+                    <h2>Synoptyka obiektu</h2>
+                    
+                    <!-- YOLO CAMERA PREVIEW ROW -->
+                    <div class="pklot-layout-compact">
+                        <div class="pklot-controls-compact">
+                            <div class="control-group-row">
+                                <label for="pklot-snapshot-select" class="pklot-label">Kamera YOLO (lista):</label>
+                                <select id="pklot-snapshot-select" class="pklot-select">
+                                    <option value="">Ładowanie...</option>
+                                </select>
+                            </div>
+                            <div class="control-group-row">
+                                <label class="pklot-label">Kalendarz Hikvision:</label>
+                                <div id="pklot-cctv-calendar" class="pklot-cctv-calendar"></div>
+                            </div>
+                            <button id="pklot-apply-btn" class="hmi-btn btn-primary btn-small" disabled style="width: 100%;">Wymuś PLC</button>
+                            <div id="pklot-meta-content" class="pklot-meta-content-mono-compact" style="flex: 1; min-height: 80px;">
+                                Wybierz klatkę, aby pobrać metadane.
+                            </div>
+                        </div>
+                        
+                        <div class="pklot-viewer-container-compact">
+                            <div class="pklot-image-wrapper">
+                                <div id="pklot-placeholder" class="pklot-placeholder">
+                                    <div class="placeholder-radar-container">
+                                        <div class="placeholder-radar-sweep"></div>
+                                        <span class="placeholder-icon">📷</span>
+                                    </div>
+                                    <div class="placeholder-title">SYSTEM DETEKCJI WIZYJNEJ YOLO</div>
+                                    <div class="placeholder-subtext">Wybierz klatkę z osi czasu lub z listy powyżej</div>
+                                </div>
+                                <img id="pklot-img" src="" alt="" class="pklot-image" />
+                                <svg id="pklot-svg" viewBox="0 0 1280 720" class="pklot-svg-overlay"></svg>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- PLAYBACK TIMELINE PANEL -->
+                    <div class="pklot-timeline-panel-compact">
+                        <div class="playback-controls">
+                            <button id="btn-play-prev" class="hmi-btn btn-secondary btn-icon-only" title="Poprzednia klatka" disabled>⏮</button>
+                            <button id="btn-play-toggle" class="hmi-btn btn-primary" style="min-width: 110px;" disabled>▶ ODTWARZAJ</button>
+                            <button id="btn-play-next" class="hmi-btn btn-secondary btn-icon-only" title="Następna klatka" disabled>⏭</button>
+                            
+                            <div class="timeline-slider-container">
+                                <span class="timeline-time-label" id="timeline-time-start">--:--</span>
+                                <input type="range" id="pklot-timeline" class="timeline-range" min="0" max="0" value="0" disabled>
+                                <span class="timeline-time-label" id="timeline-time-end">--:--</span>
+                            </div>
+
+                            <div class="speed-control-group">
+                                <select id="pklot-speed" class="speed-select" disabled>
+                                    <option value="3000">1x (3s)</option>
+                                    <option value="1500" selected>2x (1.5s)</option>
+                                    <option value="800">5x (0.8s)</option>
+                                    <option value="300">10x (0.3s)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="timeline-status-info">
+                            <span id="timeline-frame-indicator">Klatka: -- / --</span>
+                            <span id="timeline-time-current" class="text-yellow">Godzina: --:--:--</span>
+                        </div>
+                    </div>
+
+                    <!-- DIVIDER / SECTION HEADER -->
+                    <div class="synoptic-section-divider">
+                        <h3>Makieta synoptyczna parkingu (Rejestry PLC)</h3>
+                    </div>
+
+                    <div class="parking-arena-wrapper">
+                        <div class="parking-arena">
+                            <!-- ENTRY GATE (LEFT side of the road) -->
+                            <div class="gate-column entry-gate-col">
+                                <div class="gate-label-top">%Q0.0 BRAMA WJAZDOWA</div>
+                                <div class="gate-indicator">
+                                    <span id="gate-wjazd-light" class="ind-light light-red"></span>
+                                </div>
+                                <div class="gate-physical-topdown">
+                                    <div class="gate-pillar"></div>
+                                    <div id="barrier-wjazd-arm" class="gate-arm-topdown"></div>
+                                </div>
+                                <div class="loop-sensor-area" id="sensor-wjazd-badge">
+                                    DETEKCJA %I0.0
+                                </div>
+                            </div>
+ 
+                            <!-- PARKING ROWS & ROAD -->
+                            <div class="parking-center-bay">
+                                <!-- Top Row (A-1 to A-14) -->
+                                <div class="parking-row top-row" id="parking-row-top"></div>
+                                
+                                <!-- Center Road -->
+                                <div class="parking-road">
+                                    <div class="road-dashed-line"></div>
+                                </div>
+                                
+                                <!-- Bottom Row (A-15 to A-28) -->
+                                <div class="parking-row bottom-row" id="parking-row-bottom"></div>
+                            </div>
+ 
+                            <!-- EXIT GATE (RIGHT side of the road) -->
+                            <div class="gate-column exit-gate-col">
+                                <div class="gate-label-top">%Q0.1 BRAMA WYJAZDOWA</div>
+                                <div class="gate-indicator">
+                                    <span id="gate-wyjazd-light" class="ind-light light-red"></span>
+                                </div>
+                                <div class="gate-physical-topdown">
+                                    <div id="barrier-wyjazd-arm" class="gate-arm-topdown"></div>
+                                    <div class="gate-pillar"></div>
+                                </div>
+                                <div class="loop-sensor-area" id="sensor-wyjazd-badge">
+                                    DETEKCJA %I0.1
+                                </div>
+                            </div>
+ 
+                            <!-- Layer for animated driving cars spanning the whole arena -->
+                            <div id="cars-layer" class="cars-layer"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- COLUMN 3: Panel operatorski & Prognozy -->
+                <div class="hmi-column-right" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <section class="hmi-card simulation-controls-card" style="flex: none;">
+                        <h2>Panel operatorski</h2>
+                        
+                        <div class="simulation-section">
+                            <h3>Symulacja procesowa (tryb AUTO)</h3>
+                            <p class="sim-hint">Emulacja sygnału czujnika pętli indukcyjnej wjazdu/wyjazdu.</p>
+                            <div class="button-group">
+                                <button id="sim-enter-btn" class="hmi-btn btn-primary">🚗 Emuluj wjazd pojazdu</button>
+                                <button id="sim-exit-btn" class="hmi-btn btn-primary">🚙 Emuluj wyjazd pojazdu</button>
+                            </div>
+                        </div>
+
+                        <div class="simulation-section manual-controls-section disabled" id="manual-controls-panel">
+                            <h3>Wymuszenie ręczne wyjść (tryb MANUAL)</h3>
+                            <p class="sim-hint">Dostępne wyłącznie w trybie MANUAL. Bezpośrednie forsowanie cewek wyjściowych.</p>
+                            
+                            <div class="override-control-row">
+                                <span>Napęd %Q0.0 (wjazd):</span>
+                                <div class="toggle-switch-wrapper">
+                                    <button id="override-wjazd-open" class="hmi-btn btn-small">PODNIEŚ ▲</button>
+                                    <button id="override-wjazd-close" class="hmi-btn btn-small btn-active">OPUŚĆ ▼</button>
+                                </div>
+                            </div>
+                            
+                            <div class="override-control-row">
+                                <span>Napęd %Q0.1 (wyjazd):</span>
+                                <div class="toggle-switch-wrapper">
+                                    <button id="override-wyjazd-open" class="hmi-btn btn-small">PODNIEŚ ▲</button>
+                                    <button id="override-wyjazd-close" class="hmi-btn btn-small btn-active">OPUŚĆ ▼</button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="hmi-card today-forecast-card" style="flex: 1; display: flex; flex-direction: column;">
+                        <h2>Predykcja i stan rzeczywisty (Doba)</h2>
+                        <div class="today-forecast-header" style="margin-bottom: 0.5rem; display: flex; justify-content: space-between; font-family: 'Share Tech', monospace; font-size: 0.75rem;">
+                            <span class="forecast-prob-label" style="color: var(--text-secondary);">Prawdopodobieństwo trafności: <span id="today-forecast-prob" class="text-blue" style="font-weight: 700;">--%</span></span>
+                        </div>
+                        <div class="chart-canvas-wrapper" style="height: 180px; flex: 1;">
+                            <canvas id="chart-today-forecast"></canvas>
+                        </div>
+                        <div class="ml-chart-legend" style="margin-top: 8px; font-size: 0.65rem; display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; font-family: 'Share Tech', monospace;">
+                            <span class="legend-item"><span class="legend-line solid-green"></span>STAN FAKTYCZNY</span>
+                            <span class="legend-item"><span class="legend-line dashed-yellow"></span>PROGNOZA ML</span>
+                            <span class="legend-item" style="display: flex; align-items: center; gap: 0.3rem;"><span class="legend-area-bg" style="width: 16px; height: 10px; background-color: rgba(241, 196, 15, 0.15); border: 1px dashed rgba(241, 196, 15, 0.3); display: inline-block;"></span>PAS PASMA BŁĘDU</span>
+                        </div>
+                    </section>
+                </div>
+            </main>
+
+            <!-- ALARM JOURNAL (IEC 62682 / ISA-18.2) -->
+            <section class="hmi-card alarm-card" id="alarm-journal-section">
+                <h2>Dziennik alarmów i zdarzeń (IEC 62682)</h2>
+                <div class="alarm-toolbar">
+                    <span class="alarm-count-badge" id="alarm-count">0 zdarzeń</span>
+                    <button id="alarm-clear-btn" class="hmi-btn btn-small">Wyczyść dziennik</button>
+                </div>
+                <div class="alarm-table-container">
+                    <table class="alarm-table" id="alarm-table">
+                        <thead>
+                            <tr>
+                                <th>Czas</th>
+                                <th>Priorytet</th>
+                                <th>Źródło</th>
+                                <th>Komunikat</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alarm-tbody">
+                            <tr class="alarm-empty-row">
+                                <td colspan="4">Brak zarejestrowanych zdarzeń w bieżącej sesji.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+
+
+            <!-- TECHNICAL INFO -->
+            <section class="hmi-card technical-card">
+                <h2>Integracja PostGIS &amp; YOLO IoU z PLC (karta pracy dyplomowej)</h2>
+                <div class="tech-grid">
+                    <div class="tech-item">
+                        <h3>Model matematyczny detekcji (IoU)</h3>
+                        <p>Stopień zajętości wyliczany jest w czasie rzeczywistym z przecinania się poligonu miejsca P<sub>space</sub> oraz ramki detekcji YOLO P<sub>vehicle</sub>:</p>
+                        <pre class="code-block"><code>IoU = Area(P_space ∩ P_vehicle) / Area(P_space ∪ P_vehicle)</code></pre>
+                    </div>
+                    <div class="tech-item">
+                        <h3>Zapytanie przestrzenne PostGIS</h3>
+                        <p>Sprawdzenie wolnych miejsc w określonej strefie przy użyciu indeksu R-Tree (GiST) bezpośrednio na bazie SQL:</p>
+                        <pre class="code-block"><code>SELECT space_code 
+FROM parking_spaces 
+WHERE ST_DWithin(geometry::geography, ST_MakePoint(21.0123, 52.2298)::geography, 15)
+  AND status = 'FREE';</code></pre>
+                    </div>
+                    <div class="tech-item">
+                        <h3>Anonimizacja u źródła (RODO/GDPR)</h3>
+                        <p>Aby spełnić wymogi GDPR, twarze i tablice rejestracyjne są rozmazywane bezpośrednio w wątku akwizycji OpenCV. Do bazy danych wysyłane są wyłącznie bezpieczne wektory metadanych oraz wartości współczynnika IoU.</p>
+                    </div>
+                </div>
+            </section>
+            </div> <!-- END HMI SCREEN -->
+
+            <!-- TAB CONTENT 2: NETWORK TOPOLOGY (Cisco Packet Tracer style) -->
+            <div id="topology-screen" class="tab-content">
+                <div class="topology-container">
+                    <section class="hmi-card topology-canvas-card">
+                        <h2>Mapa komponentów SCADA (Cyber-Fizyczna)</h2>
+                        <p class="sim-hint">Interaktywna weryfikacja połączeń. Zielone linie oznaczają aktywną transmisję. Kliknij na węzeł, aby otworzyć konfigurację.</p>
+                        <div class="canvas-wrapper">
+                            <canvas id="topology-canvas" width="800" height="480"></canvas>
+                        </div>
+                    </section>
+
+                    <section class="hmi-card topology-config-card">
+                        <h2>Konfigurator sterowników (Driver Console)</h2>
+                        <p class="sim-hint">Zarządzaj wirtualnymi kontrolerami urządzeń. Kliknięcie 'WYMUŚ AWARIĘ' przetestuje odporność HMI na błędy transmisji.</p>
+                        <div class="node-cards-grid" id="node-cards-grid">
+                            <!-- Dynamic config nodes generated by script.js -->
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- TAB CONTENT 3: SYSTEM LOG CONSOLE -->
+            <div id="logs-screen" class="tab-content">
+                <section class="hmi-card logs-console-card">
+                    <h2>Konsola logów systemowych (Telemetry Console)</h2>
+                    <p class="sim-hint">Zdarzenia diagnostyczne w czasie rzeczywistym ze wszystkich 7 sterowników i rdzenia HMI.</p>
+                    
+                    <div class="logs-toolbar">
+                        <div class="logs-filter-group">
+                            <span class="filter-label">Filtruj poziom:</span>
+                            <div class="filter-level-buttons">
+                                <button class="filter-btn active" onclick="setLogFilterLevel('ALL')">ALL</button>
+                                <button class="filter-btn text-green" onclick="setLogFilterLevel('INFO')">INFO</button>
+                                <button class="filter-btn text-yellow" onclick="setLogFilterLevel('WARNING')">WARNING</button>
+                                <button class="filter-btn text-red" onclick="setLogFilterLevel('ERROR')">ERROR</button>
+                            </div>
+                        </div>
+                        
+                        <div class="logs-filter-group">
+                            <span class="filter-label">Filtruj źródło:</span>
+                            <div class="source-checkboxes">
+                                <label><input type="checkbox" checked value="PLC" onchange="applyLogFilters()"> PLC</label>
+                                <label><input type="checkbox" checked value="YOLO" onchange="applyLogFilters()"> YOLO</label>
+                                <label><input type="checkbox" checked value="BAZA_DANYCH" onchange="applyLogFilters()"> DB</label>
+                                <label><input type="checkbox" checked value="UPS" onchange="applyLogFilters()"> UPS</label>
+                                <label><input type="checkbox" checked value="TEMPERATURA" onchange="applyLogFilters()"> TEMP</label>
+                                <label><input type="checkbox" checked value="GDPR" onchange="applyLogFilters()"> GDPR</label>
+                                <label><input type="checkbox" checked value="SYSTEM" onchange="applyLogFilters()"> SYS</label>
+                                <label><input type="checkbox" checked value="UŻYTKOWNIK" onchange="applyLogFilters()"> OVR</label>
+                            </div>
+                        </div>
+
+                        <div class="logs-filter-group search-group">
+                            <input type="text" id="logs-search-input" placeholder="Szukaj w logach..." class="tactical-input" oninput="applyLogFilters()">
+                            <button onclick="clearSystemLogs()" class="hmi-btn btn-small">Wyczyść konsolę</button>
+                        </div>
+                    </div>
+
+                    <div class="logs-console-container">
+                        <div id="logs-terminal" class="logs-terminal-mono">
+                            <!-- Logs generated in script.js -->
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- TAB CONTENT 4: ANALYTICS / CHARTS (Grafana style) -->
+            <div id="analytics-screen" class="tab-content">
+                <div class="analytics-container">
+                    <section class="hmi-card chart-card">
+                        <h2>Temperatura szafy sterowniczej %MW30</h2>
+                        <div class="chart-value-header">
+                            <span class="chart-current-label">AKTUALNA:</span>
+                            <span id="chart-temp-val" class="chart-current-value text-yellow">--°C</span>
+                        </div>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chart-temp" width="550" height="220"></canvas>
+                        </div>
+                        <p class="sim-hint">Wentylator %Q0.2 włącza się powyżej 25°C i wyłącza poniżej 23°C (histereza).</p>
+                    </section>
+
+                    <section class="hmi-card chart-card">
+                        <h2>Poziom baterii zasilacza UPS %MW32</h2>
+                        <div class="chart-value-header">
+                            <span class="chart-current-label">POZIOM:</span>
+                            <span id="chart-ups-val" class="chart-current-value text-blue">--%</span>
+                        </div>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chart-ups" width="550" height="220"></canvas>
+                        </div>
+                        <p class="sim-hint">Awaria zasilania włącza tryb ewakuacji (szlabany otwarte wjazd/wyjazd, baterie &lt; 20%).</p>
+                    </section>
+
+                    <section class="hmi-card chart-card">
+                        <h2>Zajętość parkingu %</h2>
+                        <div class="chart-value-header">
+                            <span class="chart-current-label">OBŁOŻENIE:</span>
+                            <span id="chart-occupancy-val" class="chart-current-value text-green">--%</span>
+                        </div>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chart-occupancy" width="550" height="220"></canvas>
+                        </div>
+                        <p class="sim-hint">Współczynnik zajętości strefy A na podstawie sumarycznych stanów miejsc parkingowych.</p>
+                    </section>
+
+                    <section class="hmi-card chart-card">
+                        <h2>Predykcyjne utrzymanie ruchu (Maintenance)</h2>
+                        <div class="stats-grid" style="margin-top: 15px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+                            <div class="stat-item" style="display: flex; flex-direction: column; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 0.6rem; border-radius: 3px; align-items: center;">
+                                <span class="stat-label" style="font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;">Licznik cykli %MW46</span>
+                                <span id="chart-cycles-val" class="stat-value text-yellow" style="font-family: 'Share Tech', monospace; font-size: 1.5rem; font-weight: 700;">0</span>
+                            </div>
+                            <div class="stat-item" style="display: flex; flex-direction: column; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 0.6rem; border-radius: 3px; align-items: center;">
+                                <span class="stat-label" style="font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;">Stan silnika %MW48</span>
+                                <span id="chart-motor-val" class="stat-value text-green" style="font-family: 'Share Tech', monospace; font-size: 1.5rem; font-weight: 700;">100.0%</span>
+                            </div>
+                            <div class="stat-item" style="display: flex; flex-direction: column; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 0.6rem; border-radius: 3px; align-items: center;">
+                                <span class="stat-label" style="font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;">Poziom smaru %MW50</span>
+                                <span id="chart-grease-val" class="stat-value text-blue" style="font-family: 'Share Tech', monospace; font-size: 1.5rem; font-weight: 700;">100.0%</span>
+                                <button id="maintenance-grease-btn" class="hmi-btn btn-secondary btn-small" style="margin-top: 5px; padding: 2px 8px; font-size: 0.65rem;">WYMIEŃ SMAR</button>
+                            </div>
+                            <div class="stat-item" style="display: flex; flex-direction: column; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 0.6rem; border-radius: 3px; align-items: center;">
+                                <span class="stat-label" style="font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;">Stan wentylatora %MW52</span>
+                                <span id="chart-fan-val" class="stat-value text-green" style="font-family: 'Share Tech', monospace; font-size: 1.5rem; font-weight: 700;">100.0%</span>
+                                <button id="maintenance-fan-btn" class="hmi-btn btn-secondary btn-small" style="margin-top: 5px; padding: 2px 8px; font-size: 0.65rem;">SERWIS FAN</button>
+                            </div>
+                            <div class="stat-item" style="display: flex; flex-direction: column; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 0.6rem; border-radius: 3px; align-items: center;">
+                                <span class="stat-label" style="font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;">Wjazd %Q0.0 OVR</span>
+                                <span id="chart-wjazd-ovr-val" class="stat-value" style="font-family: 'Share Tech', monospace; font-size: 1.2rem; font-weight: 700;">OFF</span>
+                            </div>
+                            <div class="stat-item" style="display: flex; flex-direction: column; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); padding: 0.6rem; border-radius: 3px; align-items: center;">
+                                <span class="stat-label" style="font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;">Wyjazd %Q0.1 OVR</span>
+                                <span id="chart-wyjazd-ovr-val" class="stat-value" style="font-family: 'Share Tech', monospace; font-size: 1.2rem; font-weight: 700;">OFF</span>
+                            </div>
+                        </div>
+                        <p class="sim-hint" style="margin-top: 15px;">Utrzymanie ruchu: zużycie smaru i wentylatora szafy (%MW54: <span id="chart-fan-run-val" class="text-yellow">0</span>s pracy) wpływa na tarcie, temperaturę i zużycie silników.</p>
+                    </section>
+                </div>
+            </div>
+
+            <!-- TAB CONTENT 5: ML PREDICTIONS SCREEN -->
+            <div id="ml-screen" class="tab-content">
+                <div class="ml-container">
+                    <section class="hmi-card ml-chart-card">
+                        <h2>Estymacja zajętości &amp; Prognoza 24h parkingu</h2>
+                        <div class="ml-controls-row">
+                            <div class="ml-control-group">
+                                <label for="ml-forecast-method">Metoda prognozowania:</label>
+                                <select id="ml-forecast-method" class="tactical-input" onchange="drawMLCharts()">
+                                    <option value="regression" selected>Regresja Wielozmienna (Gradient Descent)</option>
+                                    <option value="holt_winters">Sezonowe Wygładzanie (Holt-Winters)</option>
+                                </select>
+                            </div>
+                            <div class="ml-chart-legend">
+                                <span class="legend-item"><span class="legend-line solid-green"></span>DANE RZECZYWISTE</span>
+                                <span class="legend-item"><span class="legend-line dashed-yellow"></span>PROGNOZA MODELU ML</span>
+                            </div>
+                        </div>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chart-ml-forecast" width="700" height="280"></canvas>
+                        </div>
+                        <p class="sim-hint">Prognoza do dobowa na kolejne 24 godziny od aktualnego punktu czasowego. Uwzględnia aktualny stan wjazdów, dzień tygodnia oraz typ pogody.</p>
+                    </section>
+
+                    <section class="hmi-card ml-history-card">
+                        <h2>Średnia zajętość dobowa (Profil Historyczny PKLot)</h2>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chart-ml-history" width="700" height="280"></canvas>
+                        </div>
+                        <p class="sim-hint">Pokazuje uśredniony profil dobowego napełnienia parkingu dla wybranego sektora oparty na danych zebranych z datasetu PKLot.</p>
+                    </section>
+
+                    <section class="hmi-card ml-telemetry-card">
+                        <h2>Telemetria silnika ML (Gradient Descent)</h2>
+                        <div class="ml-telemetry-grid">
+                            <div class="ml-telemetry-item">
+                                <span class="telemetry-label">Status Modelu</span>
+                                <span id="ml-status" class="telemetry-value text-green">INICJACJA...</span>
+                            </div>
+                            <div class="ml-telemetry-item">
+                                <span class="telemetry-label">Rozmiar próby</span>
+                                <span id="ml-sample-size" class="telemetry-value text-yellow">--</span>
+                            </div>
+                            <div class="ml-telemetry-item">
+                                <span class="telemetry-label">Błąd Średniokwadratowy (MSE)</span>
+                                <span id="ml-mse" class="telemetry-value text-blue">--</span>
+                            </div>
+                            <div class="ml-telemetry-item">
+                                <span class="telemetry-label">Korelacja słoneczna</span>
+                                <span id="ml-weight-sunny" class="telemetry-value">--</span>
+                            </div>
+                            <div class="ml-telemetry-item">
+                                <span class="telemetry-label">Korelacja deszczowa</span>
+                                <span id="ml-weight-rainy" class="telemetry-value">--</span>
+                            </div>
+                            <div class="ml-telemetry-item">
+                                <span class="telemetry-label">Korelacja weekendowa</span>
+                                <span id="ml-weight-weekend" class="telemetry-value">--</span>
+                            </div>
+                        </div>
+                        <div class="ml-insights-box">
+                            <h3>Wnioski z analizy ML:</h3>
+                            <ul id="ml-insights-list" class="ml-insights-list">
+                                <li>Wczytywanie analizy...</li>
+                            </ul>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- BOTTOM PILLS STATUS BAR -->
+            <footer class="bottom-bar">
+                <div class="pill-badge pill-green" id="pill-plc">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">PLC LINK</span>
+                    <span class="pill-val">ACTIVE</span>
+                </div>
+                <div class="pill-badge pill-green" id="pill-temp">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">TEMP. SZAFY</span>
+                    <span class="pill-val">--°C</span>
+                </div>
+                <div class="pill-badge pill-blue" id="pill-ups">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">ZASILACZ UPS</span>
+                    <span class="pill-val">--%</span>
+                </div>
+                <div class="pill-badge pill-blue" id="pill-calib">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">HOMOGRAFIA</span>
+                    <span class="pill-val">SKALIBROWANA</span>
+                </div>
+                <div class="pill-badge pill-green" id="pill-yolo">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">SILNIK YOLO</span>
+                    <span class="pill-val">ONLINE</span>
+                </div>
+                <div class="pill-badge pill-green" id="pill-gdpr">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">RODO ANON.</span>
+                    <span class="pill-val">AKTYWNA</span>
+                </div>
+                <div class="pill-badge pill-gray" id="pill-fan">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">WENTYLATOR %Q0.2</span>
+                    <span class="pill-val" id="val-fan">WYŁ.</span>
+                </div>
+                <div class="pill-badge pill-gray" id="pill-wjazd-ovr">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">%Q0.0 OVR</span>
+                    <span class="pill-val" id="val-wjazd-ovr">OFF</span>
+                </div>
+                <div class="pill-badge pill-gray" id="pill-wyjazd-ovr">
+                    <span class="pill-dot"></span>
+                    <span class="pill-name">%Q0.1 OVR</span>
+                    <span class="pill-val" id="val-wyjazd-ovr">OFF</span>
+                </div>
+            </footer>
+        </div>
+
+        <!-- RIGHT SIDEBAR (NAV) -->
+        <aside class="right-sidebar">
+            <nav class="sidebar-nav">
+                <a href="#plc-registers-section" class="nav-item active" title="Mapa rejestrów PLC">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">PLC</span>
+                </a>
+                <a href="#parking-grid" class="nav-item" title="Synoptyka stanowisk">
+                    <span class="nav-icon">🅿️</span>
+                    <span class="nav-label">PARK</span>
+                </a>
+                <a href="#alarm-journal-section" class="nav-item" title="Dziennik alarmów">
+                    <span class="nav-icon">🔔</span>
+                    <span class="nav-label">ALARM</span>
+                </a>
+                <a href="#plc-registers-section" class="nav-item" title="Moduł detekcji YOLO">
+                    <span class="nav-icon">📹</span>
+                    <span class="nav-label">YOLO</span>
+                </a>
+            </nav>
+        </aside>
+    </div>
+</body>
+</html>

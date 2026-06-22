@@ -151,3 +151,7 @@ yarn-error.log*
 # AI agents configuration & tracking (Local only)
 AGENTS.md
 AGENTS-MEMORY.md
+
+# PKLot Dataset (Local only, huge amount of files)
+PKLot/
+
