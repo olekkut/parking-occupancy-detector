@@ -14,14 +14,24 @@ from backend.app.db.models import ParkingSpace, OccupancyHistory, SpaceStatus
 from backend.app.hardware_drivers import driver_manager
 from backend.app.ml_forecaster import MLForecaster
 
+import sys
+
 # Dynamic directory paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+if getattr(sys, 'frozen', False):
+    # PyInstaller temp folder
+    MEIPASS_DIR = getattr(sys, '_MEIPASS', BASE_DIR)
+    TEMPLATES_DIR = os.path.join(MEIPASS_DIR, "backend", "app", "templates")
+    STATIC_DIR = os.path.join(MEIPASS_DIR, "backend", "app", "static")
+else:
+    TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+    STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 # Ensure folders exist
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
+
 
 app = FastAPI(title="Smart Parking PLC HMI Server")
 
@@ -361,10 +371,26 @@ async def manual_override(override_request: ManualOverrideRequest):
     await notify_clients()
     return {"status": "success", "barrier": override_request.barrier, "open_state": override_request.open_state}
 
-# ----------------- PKLOT DATASET INTEGRATION -----------------
+def resolve_pklot_root():
+    exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else BASE_DIR
+    candidates = [
+        os.path.abspath(os.path.join(BASE_DIR, "..", "..", "PKLot", "parking1a")),
+        os.path.abspath(os.path.join(exe_dir, "..", "..", "..", "..", "PKLot", "parking1a")),
+        os.path.abspath(os.path.join(exe_dir, "..", "PKLot", "parking1a")),
+        os.path.abspath(os.path.join(exe_dir, "PKLot", "parking1a")),
+        os.path.abspath(os.path.join(os.getcwd(), "PKLot", "parking1a")),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            print(f"PKLOT_ROOT resolved to: {candidate}")
+            return candidate
+    print(f"PKLOT_ROOT not found. Falling back to: {candidates[0]}")
+    return candidates[0]
 
-PKLOT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "PKLot", "parking1a"))
+PKLOT_ROOT = resolve_pklot_root()
 forecaster = MLForecaster(PKLOT_ROOT)
+
+
 
 def parse_pklot_xml(xml_path: str):
     """
@@ -703,3 +729,6 @@ async def get_pklot_day_occupancy(date_str: str):
     return sorted(results, key=lambda x: x["hour"])
 
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

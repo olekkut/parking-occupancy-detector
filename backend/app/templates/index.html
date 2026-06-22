@@ -353,30 +353,6 @@
             </section>
 
 
-
-            <!-- TECHNICAL INFO -->
-            <section class="hmi-card technical-card">
-                <h2>Integracja PostGIS &amp; YOLO IoU z PLC (karta pracy dyplomowej)</h2>
-                <div class="tech-grid">
-                    <div class="tech-item">
-                        <h3>Model matematyczny detekcji (IoU)</h3>
-                        <p>Stopień zajętości wyliczany jest w czasie rzeczywistym z przecinania się poligonu miejsca P<sub>space</sub> oraz ramki detekcji YOLO P<sub>vehicle</sub>:</p>
-                        <pre class="code-block"><code>IoU = Area(P_space ∩ P_vehicle) / Area(P_space ∪ P_vehicle)</code></pre>
-                    </div>
-                    <div class="tech-item">
-                        <h3>Zapytanie przestrzenne PostGIS</h3>
-                        <p>Sprawdzenie wolnych miejsc w określonej strefie przy użyciu indeksu R-Tree (GiST) bezpośrednio na bazie SQL:</p>
-                        <pre class="code-block"><code>SELECT space_code 
-FROM parking_spaces 
-WHERE ST_DWithin(geometry::geography, ST_MakePoint(21.0123, 52.2298)::geography, 15)
-  AND status = 'FREE';</code></pre>
-                    </div>
-                    <div class="tech-item">
-                        <h3>Anonimizacja u źródła (RODO/GDPR)</h3>
-                        <p>Aby spełnić wymogi GDPR, twarze i tablice rejestracyjne są rozmazywane bezpośrednio w wątku akwizycji OpenCV. Do bazy danych wysyłane są wyłącznie bezpieczne wektory metadanych oraz wartości współczynnika IoU.</p>
-                    </div>
-                </div>
-            </section>
             </div> <!-- END HMI SCREEN -->
 
             <!-- TAB CONTENT 2: NETWORK TOPOLOGY (Cisco Packet Tracer style) -->
@@ -638,28 +614,6 @@ WHERE ST_DWithin(geometry::geography, ST_MakePoint(21.0123, 52.2298)::geography,
                 </div>
             </footer>
         </div>
-
-        <!-- RIGHT SIDEBAR (NAV) -->
-        <aside class="right-sidebar">
-            <nav class="sidebar-nav">
-                <a href="#plc-registers-section" class="nav-item active" title="Mapa rejestrów PLC">
-                    <span class="nav-icon">📊</span>
-                    <span class="nav-label">PLC</span>
-                </a>
-                <a href="#parking-grid" class="nav-item" title="Synoptyka stanowisk">
-                    <span class="nav-icon">🅿️</span>
-                    <span class="nav-label">PARK</span>
-                </a>
-                <a href="#alarm-journal-section" class="nav-item" title="Dziennik alarmów">
-                    <span class="nav-icon">🔔</span>
-                    <span class="nav-label">ALARM</span>
-                </a>
-                <a href="#plc-registers-section" class="nav-item" title="Moduł detekcji YOLO">
-                    <span class="nav-icon">📹</span>
-                    <span class="nav-label">YOLO</span>
-                </a>
-            </nav>
-        </aside>
     </div>
 </body>
 </html>

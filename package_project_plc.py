@@ -12,7 +12,7 @@ def package_project():
     print(f"Creating ZIP archive at: {dest_zip_path}")
     
     # Exclude list (patterns to ignore)
-    exclude_dirs = {".git", "venv", "__pycache__", ".vscode", ".idea", ".pytest_cache", "PKLot"}
+    exclude_dirs = {".git", "venv", "__pycache__", ".vscode", ".idea", ".pytest_cache", "PKLot", "node_modules"}
     exclude_files = {".env", "PLC_ParkingProject_AlexK.zip"}
     
     zip_count = 0

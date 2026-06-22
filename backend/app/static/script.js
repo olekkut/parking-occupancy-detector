@@ -2076,12 +2076,7 @@ function switchTab(tabId) {
     const btn = document.getElementById(btnId);
     if (btn) btn.classList.add('active');
     
-    // Right sidebar: hide on tabs where it has no function (only useful on HMI)
-    if (tabId === 'topology-screen' || tabId === 'logs-screen' || tabId === 'analytics-screen' || tabId === 'ml-screen') {
-        document.body.classList.add('sidebar-hidden');
-    } else {
-        document.body.classList.remove('sidebar-hidden');
-    }
+
     
     if (tabId === 'topology-screen') {
         setTimeout(drawTopology, 50);

@@ -46,7 +46,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding-right: 70px; /* Leave space for right sidebar */
+    padding-right: 0;
     background-color: var(--bg-primary);
 }
 
@@ -1316,65 +1316,6 @@ body {
     background-color: #666666;
 }
 
-/* RIGHT SIDEBAR (NAV) */
-.right-sidebar {
-    width: 70px;
-    background-color: var(--bg-sidebar);
-    border-left: 1px solid var(--border-color);
-    position: fixed;
-    top: 0;
-    right: 0;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
-    padding-top: 1.5rem;
-    z-index: 100;
-}
-
-.sidebar-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    width: 100%;
-}
-
-.nav-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none;
-    color: var(--text-secondary);
-    padding: 0.75rem 0;
-    transition: all 0.15s ease;
-    width: 100%;
-    border-left: 3px solid transparent;
-}
-
-.nav-item:hover {
-    color: #ffffff;
-    background-color: rgba(255, 255, 255, 0.02);
-}
-
-.nav-item.active {
-    color: var(--clr-blue);
-    border-left-color: var(--clr-blue);
-    background-color: rgba(52, 152, 219, 0.05);
-}
-
-.nav-icon {
-    font-size: 1.2rem;
-    margin-bottom: 0.2rem;
-}
-
-.nav-label {
-    font-family: 'Share Tech', monospace;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
 
 /* ========================= DIAGNOSTICS & LOGS TABS LAYOUT ========================= */
 
@@ -2410,25 +2351,6 @@ body.theme-light-high-glare .override-control-row {
     border-color: #ccc !important;
 }
 
-/* ========================= SIDEBAR AUTO-HIDE ========================= */
-
-.right-sidebar {
-    transition: transform 0.3s ease, opacity 0.3s ease;
-}
-
-.main-content {
-    transition: padding-right 0.3s ease;
-}
-
-body.sidebar-hidden .right-sidebar {
-    transform: translateX(100%);
-    opacity: 0;
-    pointer-events: none;
-}
-
-body.sidebar-hidden .main-content {
-    padding-right: 0;
-}
 
 /* ========================= ENGINE CHECK LOCKOUT BANNER ========================= */
 

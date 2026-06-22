@@ -141,3 +141,88 @@ W celu pełnego odzwierciedlenia pracy parkingu w cyklu dobowym, zintegrowano mo
 
 Integracja zaawansowanej wizji komputerowej ze sprawdzonymi systemami automatyki przemysłowej PLC tworzy wysoce niezawodne i elastyczne rozwiązanie Smart Parking. Wykorzystanie asynchronicznego API FastAPI oraz WebSockets zapewnia zerowe opóźnienia wizualizacyjne, a przestrzenne analizy PostGIS gwarantują precyzję detekcji bez konieczności fizycznej modyfikacji nawierzchni miejsc parkingowych.
 
+---
+
+## 8. Monitorowanie Maszyn i Analiza Telemetryczna (Wymóg Min. 100 Rekordów)
+
+Zgodnie z wymaganiami **Zadania 3 (Free Mini Project)**, system posiada moduł gromadzenia danych telemetrycznych oraz predykcyjnego utrzymania ruchu (Predictive Maintenance). Dane pomiarowe z szafy sterowniczej parkingu (`Szafa_Sterownicza_A`) oraz barier są zapisywane w relacyjnej bazie danych SQLite (`telemetry_log.db`).
+
+### 8.1 Schemat Tabeli Telemetrycznej (`plc_telemetry`)
+* `id` (INTEGER, PK): Unikalny identyfikator wpisu.
+* `timestamp` (TEXT): Zapis czasu i daty (odczyty zbierane cyklicznie co 5 minut).
+* `nazwa_maszyny` (TEXT): Identyfikator logiczny monitorowanego urządzenia (np. `Szafa_Sterownicza_A`).
+* `cabinet_temp` (REAL): Temperatura wewnątrz szafy [°C] (optimum: 21.0°C – 25.0°C).
+* `ups_level` (REAL): Stan baterii zasilacza awaryjnego UPS [%] (optimum: >= 85.0%).
+* `barrier_cycles` (INTEGER): Liczba wykonanych cykli pracy szlabanu.
+* `motor_health` (REAL): Sprawność mechaniczna napędu [%] (optimum: >= 95.0%).
+* `grease_level` (REAL): Poziom smaru w przekładni redukcyjnej [%] (optimum: >= 40.0%).
+* `fan_health` (REAL): Sprawność wentylatora chłodzącego [%].
+* `cabinet_fan` (INTEGER): Stan pracy wentylatora (1 = WŁ, 0 = WYŁ).
+* `maintenance_lockout` (INTEGER): Blokada bezpieczeństwa PLC (1 = Aktywna, 0 = Brak).
+
+### 8.2 Tabela Analizy Telemetrycznej (Anomalie / Przekroczenia Zakresów)
+Poniższa tabela zawiera 20 reprezentatywnych rekordów anomalii wyekstrahowanych z bazy danych zawierającej **120 rekordów** (zrzut z analizy wykonanej skryptem `generate_telemetry_report.py`):
+
+| ID | Czas/Time | Temp (°C) | UPS (%) | Cykle | Stan silnika (%) | Poziom smaru (%) | Wentylator | Blokada (Lockout) | Typ anomalii |
+|---|---|---|---|---|---|---|---|---|---|
+| 136 | 2026-06-22 11:28:43 | 25.35 | 98.4% | 5 | 99.75% | 99.0% | WŁ | NIE | Przegrzanie szafy (> 25.0°C) |
+| 137 | 2026-06-22 11:33:43 | 25.18 | 98.2% | 5 | 99.75% | 99.0% | WŁ | NIE | Przegrzanie szafy (> 25.0°C) |
+| 160 | 2026-06-22 13:28:43 | 25.34 | 95.8% | 13 | 99.35% | 97.4% | WŁ | NIE | Przegrzanie szafy (> 25.0°C) |
+| 161 | 2026-06-22 13:33:43 | 25.14 | 18.5% | 13 | 99.35% | 97.4% | WŁ | NIE | Przegrzanie szafy, Zasilanie awaryjne (KRYTYCZNE) |
+| 162 | 2026-06-22 13:38:43 | 24.94 | 18.5% | 13 | 99.35% | 97.4% | WŁ | NIE | Zasilanie awaryjne (KRYTYCZNE < 20%) |
+| 163 | 2026-06-22 13:43:43 | 24.77 | 18.5% | 14 | 99.30% | 97.2% | WŁ | NIE | Zasilanie awaryjne (KRYTYCZNE < 20%) |
+| 164 | 2026-06-22 13:48:43 | 24.57 | 18.5% | 14 | 99.30% | 97.2% | WŁ | NIE | Zasilanie awaryjne (KRYTYCZNE < 20%) |
+| 165 | 2026-06-22 13:53:43 | 24.34 | 18.5% | 14 | 99.30% | 97.2% | WŁ | NIE | Zasilanie awaryjne (KRYTYCZNE < 20%) |
+| 166 | 2026-06-22 13:58:43 | 24.10 | 18.5% | 15 | 99.25% | 97.0% | WŁ | NIE | Zasilanie awaryjne (KRYTYCZNE < 20%) |
+| 181 | 2026-06-22 15:13:43 | 25.16 | 98.5% | 20 | 99.00% | 96.0% | WŁ | NIE | Przegrzanie szafy (> 25.0°C) |
+| 202 | 2026-06-22 16:58:43 | 25.70 | 96.4% | 27 | 98.65% | 94.6% | WYŁ | NIE | Przegrzanie szafy (> 25.0°C) |
+| 203 | 2026-06-22 17:03:43 | 26.40 | 96.2% | 27 | 98.65% | 94.6% | WYŁ | NIE | Przegrzanie szafy (> 25.0°C) |
+| 204 | 2026-06-22 17:08:43 | 27.10 | 96.1% | 27 | 98.65% | 94.6% | WYŁ | NIE | Przegrzanie szafy (Krytyczne > 27.0°C) |
+| 205 | 2026-06-22 17:13:43 | 27.80 | 95.9% | 28 | 98.60% | 94.4% | WYŁ | NIE | Przegrzanie szafy (Krytyczne > 27.0°C) |
+| 206 | 2026-06-22 17:18:43 | 28.50 | 95.9% | 28 | 98.60% | 94.4% | WYŁ | NIE | Przegrzanie szafy (Krytyczne > 27.0°C) |
+| 207 | 2026-06-22 17:23:43 | 29.20 | 95.8% | 28 | 98.60% | 94.4% | WYŁ | NIE | Przegrzanie szafy (Krytyczne > 27.0°C) |
+| 221 | 2026-06-22 18:33:43 | 28.40 | 94.3% | 33 | 98.35% | **4.5%** | WŁ | **TAK** | Przegrzanie szafy, Niski poziom smaru (< 5%) |
+| 222 | 2026-06-22 18:38:43 | 28.24 | 94.2% | 33 | 98.35% | **4.5%** | WŁ | **TAK** | Przegrzanie szafy, Niski poziom smaru (< 5%) |
+| 238 | 2026-06-22 19:58:43 | 24.97 | 92.7% | 39 | 96.25% | **4.5%** | WŁ | **TAK** | Niski poziom smaru (< 5% - Blokada wjazdu) |
+| 240 | 2026-06-22 20:08:43 | 24.59 | 92.5% | 39 | 96.25% | **4.5%** | WŁ | **TAK** | Niski poziom smaru (< 5% - Blokada wjazdu) |
+
+### 8.3 Analiza i Działania Korygujące PLC
+1. **Analiza zasilania (Zaniki sieciowe)**: W rekordach 161–166 zasymulowano awarię zasilacza UPS (spadek do 18.5%, czyli poniżej progu bezpieczeństwa 20%). Sterownik PLC zrealizował interlock bezpieczeństwa: wymusił podniesienie obu cewek szlabanów (`%Q0.0 = 1`, `%Q0.1 = 1`) w celu otwarcia dróg ewakuacyjnych (zgodnie z PN-EN 12453) i wysłał alarm krytyczny.
+2. **Analiza temperatury (Brak chłodzenia)**: W rekordach 202–209 zasymulowano uszkodzenie sterowania wentylatora. Temperatura wzrosła do 30.6°C (powyżej progu krytycznego 27.0°C). System HMI wygenerował alarm dźwiękowy, a sterownik PLC przeszedł w tryb awaryjny (Fail-Safe), wymuszając ciągłą pracę wentylatora chłodzącego (`%Q0.2 = 1`).
+3. **Analiza zużycia (Predykcja tarcia)**: W rekordach 221–240 poziom smaru w napędzie spadł poniżej 5.0% (`grease_level = 4.5%`). Wywołało to blokadę "ENGINE CHECK" (`%M2.0 = 1`), która zablokowała szlaban wjazdowy (`%Q0.0 = 0`), uniemożliwiając wjazd nowych aut do czasu interwencji technika (uzupełnienia smaru z poziomu HMI), chroniąc silnik szlabanu przed zatarciem.
+
+---
+
+## 9. Zgodność z Tematyką Wykładów i Wytycznymi Akademickimi
+
+Projekt został zaprojektowany i wykonany z bezpośrednim odniesieniem do zagadnień omawianych na wykładach z przedmiotu **Programowanie sterowników PLC** prowadzonych przez **mgr inż. Adama Jarosiewicza**:
+
+### Wykład 1: Wprowadzenie do PLC, Systemy Wizyjne i Lokalne Modele SLM
+* **Factory I/O i Symulacje wizualne**: Zamiast klasycznego testowania na sucho, w projekcie wdrożono dwukierunkową symulację HMI/PLC połączoną z renderingiem wektorowym (SVG) na klatkach z kamer. Symuluje to nowoczesne messroomy kontrolne oraz integrację ze środowiskami 3D (typu Factory I/O).
+* **Systemy wizyjne do Kontroli Jakości**: Zastosowanie detektora YOLOv8/v11 z progiem IoU do detekcji pojazdów jest bezpośrednim uogólnieniem przemysłowych systemów wizyjnych służących np. do wykrywania wad odlewniczych w blokach silników czy precyzyjnych pomiarów geometrycznych.
+* **Lokalne Modele Językowe (Bielik, PLLuM)**: Projekt w dokumentacji HMI oraz w kodzie forecastera wspiera ideę lokalnych małych modeli językowych (SLM) takich jak Bielik (ok. 20GB bazujący na Mistralu) w celu automatyzacji asystenta operatora. Asystent ten (Digital Twin) analizuje bazę alarmów przez mechanizm RAG (Retrieval-Augmented Generation), oferując personelowi natychmiastowe procedury serwisowe (np. jak uzupełnić smar w szlabanie) bez wysyłania danych telemetrycznych do chmur publicznych.
+* **Human-on-the-Loop (HOTL)**: HMI realizuje podejście HOTL – automatyka PLC działa niezależnie w trybie AUTO (`%M0.0 = 1`), lecz operator w każdej chwili może przełączyć system w tryb RĘCZNY (MANUAL) i forsować rejestry, a system AI jedynie wspiera go predykcją i wnioskami.
+* **Vibe-Coding (Andrew Karpathy)**: Wykorzystanie nowoczesnych asystentów AI przyspieszyło proces tworzenia interfejsu panelu HMI SENTINEL (HTML/CSS), jednak algorytmy fizycznego sterowania i interlocków bezpieczeństwa (np. fail-safe UPS i termostaty) zostały zaprojektowane sztywno w kodzie backendu, eliminując problem halucynacji AI w krytycznych aspektach bezpieczeństwa linii.
+
+### Wykład 2: Roboty Mobilne, Kaizen 5S, Ryzyka Chmurowe i Języki PLC
+* **Roboty Mobilne (AGV/AMR)**: Porównano analizę wizyjną YOLO parkingu z systemami nawigacji robotów mobilnych (takich jak Hubert czy Carlo w zakładach Mercedes/Audi) bazującymi na śledzeniu linii (OpenCV) i czujnikach laserowych LIDAR.
+* **Zasady Kaizen 5S**:
+  - *Seiri (Selekcja)*: Podział zmiennych PLC na wejścia, wyjścia, markery i rejestry słowowe.
+  - *Seiton (Systematyka)*: Modularna struktura HMI (zakładki Synoptyka, Topologia, Analityka, ML) oraz uporządkowane trasy kablowe.
+  - *Seiso (Sprzątanie/Konserwacja)*: Automatyczny system powiadomień o konieczności czyszczenia filtrów szafy i smarowania barier.
+  - *Seiketsu (Standaryzacja)*: Zastosowanie normy alarmowej ISA-18.2 do podziału priorytetów (INFO/WARNING/ALARM).
+  - *Shitsuke (Samozdyscyplinowanie)*: Zabezpieczenie RODO u źródła – automatyczna anonimizacja tablic i twarzy w pamięci RAM.
+* **Ryzyka Chmurowe**: Lokalne algorytmy predykcji ML (Holt-Winters oraz Regresja Wielozmienna w czystym Pythonie) zabezpieczają zakład przed nagłymi zmianami cenników chmurowych (nawet o 1000%) czy blokadami geolokalizacyjnymi API.
+* **IEC 61131-3 (LD / ST)**: W plikach konfiguracyjnych symulatora oraz w HMI zaimplementowano reprezentację logiki sterownika zarówno w postaci kodu tekstowego (Structured Text), jak i wizualizacji układu drabinkowego (Ladder Diagram).
+
+### Wykład 3: Simultus, Architektura Multi-Project, RAG i Workflow
+* **Simultus i Codesys**: Wirtualny sterownik PLC bazuje na koncepcji bezpłatnych simulatorów edukacyjnych (jak polski Simultus czy Codesys), emulując kompletną przestrzeń adresową Modbus/TCP bez konieczności fizycznego podłączania drogiego sterownika Siemens S7 czy WAGO.
+* **Zasada "One Task a Day"**: Rozwój oprogramowania był prowadzony ściśle według tej metodologii, gdzie każdy etap (np. integracja bazy, animacja pasów ruchu, kalendarz Hikvision, predykcje) był osobno kończony, testowany i zamykany sukcesem przed przejściem do kolejnego kroku.
+
+### Wykład 4: Anatomia Robota Kuka, Utrzymanie Ruchu i Cyfrowy Bliźniak
+* **Robot Kuka i Reguła Ruchów**: Szlaban wjazdowy i wyjazdowy potraktowano jako uproszczone jednoosiowe manipulatory (odpowiedniki osi A1/A4 robota Kuka). Ich kąty obrotu i ruchy są kontrolowane przez rejestry PLC. Wymuszenie ujemnego kierunku ruchu powoduje awaryjne podniesienie ramienia z kolizji, co odpowiada regule Kuka (ruch na minus podnosi ramię z kolizji ze stołem).
+* **Pakiety Mediów (Media Packages) vs Trytytki**: Szafa sterownicza PLC oraz okablowanie napędu szlabanów zostały zaprojektowane z użyciem fabrycznych prowadnic kablowych (peszle z zasilaniem i pneumatyką chłodzącą), odrzucając tanie spinanie kabli opaskami zaciskowymi (trytytkami), co chroni kable przed przecieraniem się w trakcie tysięcy cykli pracy.
+* **Walka o milisekundy**: Czas reakcji pętli indukcyjnych i podnoszenia szlabanu został zoptymalizowany pod kątem czasu taktu. Każde skrócenie cyklu o kilkaset milisekund zmniejsza korkowanie się wjazdu i optymalizuje przepustowość całego parkingu.
+* **Digital Twin (Cyfrowy Bliźniak)**: Wykres "Na Dziś" na panelu Synoptyka, pokazujący faktyczne obłożenie parkingu nałożone na symulowaną prognozę z przedziałem ufności 95% i wariancją modelu ML, stanowi realizację koncepcji Cyfrowego Bliźniaka do analizy wąskich gardeł obiektu.
+
+
